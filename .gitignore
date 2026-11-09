@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+web/dist/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+daily_automation.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
