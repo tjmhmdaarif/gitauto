@@ -1,13 +1,10 @@
 //
-// AI Summarizer: Google Gemini summarization with a local fallback.
-// If the Gemini call fails (no key, billing block, network), we still
-// produce a useful digest from the guide metadata.
+// AI Summarizer: calls the configured AI provider, with a local heuristic
+// fallback so a dead gateway, an expired key, or a billing block never costs
+// us the digest.
 //
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { chat } from '../src/ai.js';
 import { GuideItem } from '../src/types.js';
-import { ENV } from '../src/config.js';
-
-const genAI = new GoogleGenerativeAI(ENV.GOOGLE_API_KEY);
 
 function fallbackSummary(guide: GuideItem): string {
   const desc = (guide.description || '').replace(/\s+/g, ' ').trim();
@@ -19,13 +16,7 @@ function fallbackSummary(guide: GuideItem): string {
 }
 
 export async function summarizeGuide(guide: GuideItem): Promise<string> {
-  if (!ENV.GOOGLE_API_KEY) {
-    return fallbackSummary(guide);
-  }
-
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
     const prompt = `
 You are a helpful assistant summarizing a software setup guide.
 
@@ -42,9 +33,8 @@ Write a concise summary (2-3 sentences) highlighting:
 
 Keep it practical and actionable. Do not include markdown formatting. Return just the summary text.
 `;
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    return text.trim();
+    const text = (await chat(prompt, { maxTokens: 300 })).trim();
+    return text || fallbackSummary(guide);
   } catch (err) {
     console.error('Error summarizing guide:', (err as Error).message);
     return fallbackSummary(guide);

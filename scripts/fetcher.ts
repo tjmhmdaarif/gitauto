@@ -47,13 +47,8 @@ export class GuideFetcher {
       case 'ai_skill':
         return this.githubSearch(sourceConfig.query, limit, 'AI Skills');
       case 'vercel':
-        if (ENV.MIN_STARS > 0) {
-          console.warn(
-            `Vercel source skipped: MIN_STARS=${ENV.MIN_STARS} and feed entries carry no star count. ` +
-              `Set MIN_STARS=0 to include it.`
-          );
-          return [];
-        }
+        // The Vercel blog feed carries no star counts, so MIN_STARS cannot be
+        // applied here without silently dropping the whole source.
         return this.searchVercel(limit);
       case 'custom':
         return this.customFetch(sourceConfig.query, limit);
@@ -72,12 +67,18 @@ export class GuideFetcher {
     const params: Record<string, string | number> = {
       q: `${query} stars:>=${ENV.MIN_STARS}`,
       per_page: Math.min(limit, 30),
-      sort: 'stars',
+      // Sort by stars and the top of the list barely moves, so the daily digest
+      // would go empty after the first run. Sorting by "updated" surfaces the
+      // notable repos that actually moved since the last digest.
+      sort: 'updated',
       order: 'desc',
     };
 
+    const headers: Record<string, string> = {};
+    if (ENV.GITHUB_TOKEN) headers.Authorization = `Bearer ${ENV.GITHUB_TOKEN}`;
+
     try {
-      const response = await axios.get(url, { params, timeout: 15000 });
+      const response = await axios.get(url, { params, timeout: 15000, headers });
       const items = response.data.items || [];
       return items.map((item: any) => ({
         id: `gh-${item.id}`,

@@ -10,12 +10,16 @@ web/dist/
 .env.local
 .env.*.local
 
-# Runtime data
+# Runtime data — the digest state DB is committed so the cloud runner shares
+# dedupe state with local runs. Other DB files stay ignored.
 *.db
+!daily_automation.db
 *.db-journal
 *.db-wal
 *.db-shm
-daily_automation.db
+daily_automation.db-journal
+daily_automation.db-wal
+daily_automation.db-shm
 
 # Logs
 *.log

@@ -1,13 +1,10 @@
 //
 // Enricher: attach use cases, applications, a setup link, and a verdict.
-// Uses Gemini when a key is configured; otherwise derives everything from
-// the repository metadata returned by the GitHub API.
+// Uses the configured AI provider when one is reachable; otherwise derives
+// everything from the repository metadata returned by the GitHub API.
 //
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { chatJson } from '../src/ai.js';
 import { GuideItem } from '../src/types.js';
-import { ENV } from '../src/config.js';
-
-const genAI = new GoogleGenerativeAI(ENV.GOOGLE_API_KEY);
 
 function starTier(stars: number): string {
   if (stars >= 200000) return 'Exceptional';
@@ -56,23 +53,16 @@ function heuristicApplications(guide: GuideItem): string {
   return `${apps.slice(0, 3).join('; ')}.`;
 }
 
-function parseJsonBlock(text: string): any {
-  const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-  return JSON.parse(cleaned);
+interface Enrichment {
+  use_cases?: string;
+  applications?: string;
+  verdict?: string;
 }
 
 export async function enrichGuide(guide: GuideItem): Promise<GuideItem> {
   guide.setup_url = guide.url;
 
-  if (!ENV.GOOGLE_API_KEY) {
-    guide.use_cases = heuristicUseCases(guide);
-    guide.applications = heuristicApplications(guide);
-    guide.verdict = heuristicVerdict(guide);
-    return guide;
-  }
-
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const prompt = `You are analysing a GitHub repository for a daily digest of notable AI agent skills and tools.
 
 Repository: ${guide.title}
@@ -87,8 +77,7 @@ Respond with ONLY a JSON object (no markdown fences) with exactly these keys:
 - "verdict": a short verdict starting with one of Exceptional / Strong pick / Notable / Niche / Skip, then one concrete reason grounded in the stars and description
 
 JSON:`;
-    const result = await model.generateContent(prompt);
-    const parsed = parseJsonBlock(result.response.text());
+    const parsed = await chatJson<Enrichment>(prompt);
     guide.use_cases = parsed.use_cases || heuristicUseCases(guide);
     guide.applications = parsed.applications || heuristicApplications(guide);
     guide.verdict = parsed.verdict || heuristicVerdict(guide);

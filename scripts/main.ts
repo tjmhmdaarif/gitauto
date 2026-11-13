@@ -182,6 +182,22 @@ async function sendDigest(digestText: string): Promise<void> {
     console.warn('⚠️ EMAIL_PASS not set - skipping email.');
   }
 
+  if (ENV.NTFY_TOPIC) {
+    try {
+      await axios.post(`https://ntfy.sh/${ENV.NTFY_TOPIC}`, digestText, {
+        headers: {
+          Title: `${ENV.BOT_NAME} — ${new Date().toISOString().split('T')[0]}`,
+          Tags: 'envelope',
+        },
+        timeout: 15000,
+      });
+      console.log('🔔 Sent digest via ntfy.');
+      delivered.push('ntfy');
+    } catch (err) {
+      console.error('❌ Failed to send ntfy:', (err as Error).message);
+    }
+  }
+
   if (delivered.length === 0) {
     console.warn('⚠️ Digest not delivered: no working channel configured.');
   }

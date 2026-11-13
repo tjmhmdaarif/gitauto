@@ -1,0 +1,56 @@
+name: GITAUTO daily digest
+
+# Runs on GitHub's infrastructure, so the digest is delivered even when the
+# user's PC is off or asleep. The local Windows task is only a manual fallback.
+on:
+  schedule:
+    - cron: '0 0 * * *' # 00:00 UTC = 05:30 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gitauto-daily
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Run the daily pipeline
+        env:
+          BOT_NAME: GITAUTO
+          AI_PROVIDER: openai
+          AI_BASE_URL: https://integrate.api.nvidia.com/v1
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_MODEL: mistralai/mistral-large-4-1t-a52b
+          AI_TIMEOUT_MS: '90000'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node dist/scripts/scheduler.js --run-now
+
+      - name: Persist dedupe state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add daily_automation.db
+          if git diff --cached --quiet; then
+            echo "No state change to commit."
+          else
+            git commit -m "chore: GITAUTO digest state ($(date -u +%F))"
+            git push
+          fi
