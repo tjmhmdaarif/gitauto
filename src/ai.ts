@@ -26,25 +26,64 @@ function stripFences(text: string): string {
   return text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
 }
 
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const MIN_GAP_MS = 700;
+
+let lastCallAt = 0;
+
+async function respectGap(): Promise<void> {
+  const wait = MIN_GAP_MS - (Date.now() - lastCallAt);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastCallAt = Date.now();
+}
+
 async function openAiChat(prompt: string, opts: ChatOptions): Promise<string> {
   const base = ENV.AI_BASE_URL.replace(/\/+$/, '');
-  const response = await axios.post(
-    `${base}/chat/completions`,
-    {
-      model: ENV.AI_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: opts.maxTokens ?? 600,
-      ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
-    },
-    {
-      headers: ENV.AI_API_KEY ? { Authorization: `Bearer ${ENV.AI_API_KEY}` } : {},
-      timeout: ENV.AI_TIMEOUT_MS,
-    }
-  );
+  const url = `${base}/chat/completions`;
+  let lastError: unknown = new AiError('AI request failed');
 
-  const content = response.data?.choices?.[0]?.message?.content;
-  if (!content) throw new AiError('empty completion from the AI gateway');
-  return String(content);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await respectGap();
+
+      const response = await axios.post(
+        url,
+        {
+          model: ENV.AI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: opts.maxTokens ?? 600,
+          ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
+        },
+        {
+          headers: ENV.AI_API_KEY ? { Authorization: `Bearer ${ENV.AI_API_KEY}` } : {},
+          timeout: ENV.AI_TIMEOUT_MS,
+        }
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content) throw new AiError('empty completion from the AI gateway');
+      return String(content);
+    } catch (err) {
+      lastError = err;
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+
+      // Client errors other than rate limiting are not worth retrying.
+      if (status !== undefined && status >= 400 && status < 500 && !RETRYABLE_STATUS.has(status)) {
+        throw err;
+      }
+      if (attempt === MAX_ATTEMPTS) break;
+
+      const delay = 1500 * attempt * attempt; // 1.5s, then 6s
+      console.warn(
+        `AI call failed (${status ?? 'network error'}); retrying in ${delay}ms ` +
+          `(attempt ${attempt + 1}/${MAX_ATTEMPTS})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
 }
 
 async function geminiChat(prompt: string): Promise<string> {

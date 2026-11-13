@@ -5,7 +5,6 @@ import 'dotenv/config';
 import axios from 'axios';
 import nodemailer from 'nodemailer';
 import { GuideFetcher } from './fetcher.js';
-import { summarizeGuide } from './summarizer.js';
 import { enrichGuide } from './enricher.js';
 import { SqliteStorage } from '../src/storage.js';
 import { GuideItem } from '../src/types.js';
@@ -75,12 +74,9 @@ export async function runPipeline(trigger: boolean = false): Promise<PipelineRes
     );
   }
 
-  // 3. Summarize each guide (falls back to metadata if the AI provider is down)
-  for (const guide of digestGuides) {
-    guide.ai_summary = await summarizeGuide(guide);
-  }
-
-  // 4. Enrich with use cases, applications, setup link, and a verdict
+  // 3. Enrich with use cases, applications, setup link, and a verdict.
+  //    The summary helper is optional and not part of the digest, so it is not
+  //    called here — that keeps the AI call count (and the run time) down.
   for (const guide of digestGuides) {
     await enrichGuide(guide);
   }

@@ -214,7 +214,7 @@ gitauto/
 │   ├── scheduler.ts        # entry point — cron loop or one-shot
 │   ├── main.ts             # pipeline orchestration + digest builder
 │   ├── fetcher.ts          # GitHub + Vercel sources, star filter
-│   ├── summarizer.ts       # AI summary with metadata fallback
+│   ├── summarizer.ts       # optional AI summary helper (not part of the digest)
 │   ├── enricher.ts         # use cases, applications, setup, verdict
 │   └── saver.ts            # persistence helper
 ├── src/
