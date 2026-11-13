@@ -52,6 +52,10 @@ export const ENV = {
   // star data (Vercel) are never skipped by this value.
   MIN_STARS: Number(process.env.MIN_STARS) || 30000,
 
+  // Maximum guides in one digest. Candidates beyond this stay unseen and roll
+  // into the next run, so a cold database cannot produce an enormous digest.
+  MAX_DIGEST: Number(process.env.MAX_DIGEST) || 12,
+
   // Whether to run in dry-run mode (no actual sending)
   DRY_RUN: process.env.DRY_RUN === 'true',
 };

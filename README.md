@@ -153,6 +153,7 @@ GITHUB_TOKEN=                     # raises the GitHub search rate limit
 SOURCES=github,vercel,ai_skills
 FETCH_LIMIT=20
 MIN_STARS=30000
+MAX_DIGEST=12
 DRY_RUN=false
 CRON_SCHEDULE=0 0 * * *
 ```

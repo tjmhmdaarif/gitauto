@@ -34,8 +34,8 @@ jobs:
           AI_PROVIDER: openai
           AI_BASE_URL: https://integrate.api.nvidia.com/v1
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_MODEL: mistralai/mistral-large-4-1t-a52b
-          AI_TIMEOUT_MS: '90000'
+          AI_MODEL: minimaxai/minimax-m3.1-flash
+          AI_TIMEOUT_MS: '60000'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}

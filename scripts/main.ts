@@ -66,18 +66,27 @@ export async function runPipeline(trigger: boolean = false): Promise<PipelineRes
 
   console.log(`🆕 ${newGuides.length} new guides found.`);
 
-  // 3. Summarize each new guide (falls back to metadata if Gemini is unavailable)
-  for (const guide of newGuides) {
+  // Cap the digest so a cold database cannot produce an enormous run. Guides
+  // beyond the cap stay unseen and roll into the next digest.
+  const digestGuides = newGuides.slice(0, ENV.MAX_DIGEST);
+  if (newGuides.length > digestGuides.length) {
+    console.log(
+      `✂️ Capped the digest at ${digestGuides.length} of ${newGuides.length} new guides (MAX_DIGEST).`
+    );
+  }
+
+  // 3. Summarize each guide (falls back to metadata if the AI provider is down)
+  for (const guide of digestGuides) {
     guide.ai_summary = await summarizeGuide(guide);
   }
 
   // 4. Enrich with use cases, applications, setup link, and a verdict
-  for (const guide of newGuides) {
+  for (const guide of digestGuides) {
     await enrichGuide(guide);
   }
 
   // Persist the enriched guides so history survives restarts
-  for (const guide of newGuides) {
+  for (const guide of digestGuides) {
     await storage.markSeen(guide);
   }
 
@@ -89,7 +98,7 @@ export async function runPipeline(trigger: boolean = false): Promise<PipelineRes
     return n >= 1000 ? ` ★ ${(n / 1000).toFixed(1)}k` : ` ★ ${n}`;
   };
 
-  for (const guide of newGuides) {
+  for (const guide of digestGuides) {
     newGuideIds.push(guide.id);
     digestParts.push(
       `## ${guide.title}${starLabel(guide.stars)}
@@ -112,7 +121,7 @@ export async function runPipeline(trigger: boolean = false): Promise<PipelineRes
 
   const digestText =
     `# ${ENV.BOT_NAME} — Today's Software Setup Guides - ${date}\n\n` +
-    `Found ${newGuides.length} new setup guides:\n\n` +
+    `Found ${digestGuides.length} new setup guides:\n\n` +
     `${digestParts.join('\n')}\n` +
     `*Automated daily digest. To configure email/webhook delivery, set ENV variables.*\n\n`;
 
