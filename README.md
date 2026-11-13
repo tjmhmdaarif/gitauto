@@ -6,7 +6,7 @@
 
 **A bot that scouts the most notable AI repositories and skills every night,
 enriches them with use cases, applications, a setup link and a verdict — then
-delivers one curated digest to your webhook and your inbox.**
+delivers one curated digest to your webhook, your inbox, and your phone.**
 
 `fetch` → `filter` → `enrich` → `dedupe` → `deliver`
 

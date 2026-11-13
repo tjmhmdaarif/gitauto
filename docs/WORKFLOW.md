@@ -11,12 +11,19 @@ GITAUTO has two modes, both in `scripts/scheduler.ts`:
 
 | Mode | Command | Behaviour |
 |---|---|---|
-| **One-shot** | `node dist/scripts/scheduler.js --run-now` | Runs the pipeline once, exits. Used by the Windows task. |
+| **One-shot** | `node dist/scripts/scheduler.js --run-now` | Runs the pipeline once, exits. Used by GitHub Actions and by the local Windows task. |
 | **On-demand** | `npm run schedule -- --trigger` | Same as one-shot, via `tsx`. |
 | **Cron loop** | `node dist/scripts/scheduler.js` | Stays alive and runs on `CRON_SCHEDULE`. |
 
-The Windows scheduled task `GITAUTO` fires the one-shot mode daily at 05:30
-local time (= 00:00 UTC) by running `deploy/run-daily.bat`.
+The primary schedule is the [GitHub Actions workflow](../.github/workflows/daily.yml),
+which fires the one-shot mode daily at **00:00 UTC** on GitHub's runners — so the
+digest is delivered even when the PC is off. After each run it commits the
+updated `daily_automation.db` back to the repo, which is what makes the dedupe
+state survive between runs.
+
+The local Windows task `GITAUTO` is a fallback for running on your own machine.
+`deploy/run-daily.bat` wraps the same one-shot mode, and
+`deploy/ensure-gateway.mjs` makes sure the local AI gateway is up first.
 
 ---
 
@@ -42,9 +49,9 @@ A normal scheduled run will **not** send a second digest on the same UTC day.
 
 | Type | Handler | Notes |
 |---|---|---|
-| `github` | `githubSearch()` | `q = "<query> stars:>=MIN_STARS"`, `sort=stars`, `order=desc` |
+| `github` | `githubSearch()` | `q = "<query> stars:>=MIN_STARS"`, `sort=updated`, `order=desc` |
 | `ai_skill` | `githubSearch()` | same mechanism, different query |
-| `vercel` | `searchVercel()` | Atom feed; **skipped** when `MIN_STARS > 0` |
+| `vercel` | `searchVercel()` | Atom feed; always included (carries no star counts) |
 | `custom` | `customFetch()` | returns `[]` — hook for future sources |
 
 The GitHub handler captures `stargazers_count`, `topics`, `language` and
@@ -67,22 +74,24 @@ Only guides passing both checks reach the digest.
 
 ## Stage 4 — Enrich
 
-Two independent passes:
-
-**`summarizeGuide()`** — tries Gemini for a 2–3 sentence summary. On any failure
-it falls back to a metadata summary built from the description and setup steps.
-
-**`enrichGuide()`** — produces four fields:
+One pass, `enrichGuide()`, produces four fields:
 
 | Field | Source |
 |---|---|
-| `use_cases` | description + GitHub topics (AI: Gemini) |
-| `applications` | topic keyword matching (AI: Gemini) |
+| `use_cases` | AI, falling back to description + GitHub topics |
+| `applications` | AI, falling back to topic keyword matching |
 | `setup_url` | repository URL |
-| `verdict` | star tier + language + maintenance (AI: Gemini) |
+| `verdict` | AI, falling back to star tier + language + maintenance |
 
-If `GOOGLE_API_KEY` is missing or the API rejects the call, every field is
-derived locally. **The digest is never blocked by the AI.**
+The call goes through `src/ai.ts`, which speaks to any OpenAI-compatible
+endpoint (`AI_PROVIDER=openai`, the default — the cloud workflow uses NVIDIA
+NIM) or to Gemini (`AI_PROVIDER=gemini`). Calls are retried with backoff and a
+minimum gap between requests, because free tiers rate-limit bursts. If no
+provider is configured, every field is derived locally. **The digest is never
+blocked by the AI.**
+
+`scripts/summarizer.ts` is an optional helper that is not part of the digest and
+is not called by the pipeline.
 
 ---
 
@@ -107,10 +116,14 @@ WEBHOOK_URL set?  ── yes ──► POST { content: digest }
 
 EMAIL_USER && EMAIL_PASS? ── yes ──► SMTP via smtp.gmail.com:587
                             └─ no  ──► warn, continue
+
+NTFY_TOPIC set?    ── yes ──► POST https://ntfy.sh/<topic> (push)
+                   └─ no  ──► skip
 ```
 
-A working webhook no longer suppresses email — both fire. If neither channel
-works, the run warns loudly rather than silently succeeding.
+A working webhook no longer suppresses email — every channel fires
+independently. If no channel works, the run warns loudly rather than silently
+succeeding.
 
 ---
 
@@ -119,13 +132,15 @@ works, the run warns loudly rather than silently succeeding.
 | Failure | Behaviour |
 |---|---|
 | GitHub API error | logs, returns `[]` — other sources continue |
-| Gemini error | logs, falls back to metadata — digest still sent |
-| Webhook error | logs, email still attempted |
+| AI provider error | retries with backoff, then falls back to metadata — digest still sent |
+| Webhook error | logs, other channels still attempted |
 | Email error | logs, run continues |
+| ntfy error | logs, run continues |
 | SQLite error | rejects — run fails loudly |
 
-The Windows task captures everything in `logs/daily.log` and records the exit
-code, so `schtasks /query /tn GITAUTO` shows the last result.
+In the cloud, every step is captured in the Actions run log. Locally, the
+Windows task captures everything in `logs/daily.log` and records the exit code,
+so `schtasks /query /tn GITAUTO` shows the last result.
 
 ---
 
@@ -153,6 +168,7 @@ existing database keeps working across upgrades.
 
 ## Timing
 
-A typical run with `FETCH_LIMIT=20` completes in **under 30 seconds**. The
-enrichment stage is the slowest part when Gemini is enabled, because each guide
-is a separate request.
+A typical run with `FETCH_LIMIT=20` and `MAX_DIGEST=12` completes in **2–3
+minutes** end to end, including `npm ci` and the build. The enrichment stage is
+the slowest part: one AI request per guide, with a minimum gap and retries when
+the provider rate-limits.
